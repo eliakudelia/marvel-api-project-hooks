@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scanify"
+version = "0.1.0"
+description = "Make a PDF look like it was printed and scanned again."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pymupdf>=1.24",
+    "pillow>=10.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+scanify = "scanify.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["scanify*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
