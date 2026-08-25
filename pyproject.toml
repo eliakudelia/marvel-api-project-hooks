@@ -15,13 +15,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+ui = ["flask>=3.0"]
+dev = ["pytest>=8.0", "flask>=3.0"]
 
 [project.scripts]
 scanify = "scanify.cli:main"
+scanify-ui = "scanify.web.app:main"
 
 [tool.setuptools.packages.find]
 include = ["scanify*"]
+
+[tool.setuptools.package-data]
+scanify = ["web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

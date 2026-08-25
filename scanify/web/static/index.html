@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scanify</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%232f6f4f%27/%3E%3Crect x=%278%27 y=%276%27 width=%2716%27 height=%2720%27 rx=%272%27 fill=%27%23fff%27/%3E%3Cg fill=%27%232f6f4f%27%3E%3Crect x=%2711%27 y=%2711%27 width=%2710%27 height=%271.6%27/%3E%3Crect x=%2711%27 y=%2715%27 width=%2710%27 height=%271.6%27/%3E%3Crect x=%2711%27 y=%2719%27 width=%276%27 height=%271.6%27/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f4f4f3; --panel: #ffffff; --ink: #1b1b1a; --muted: #6d6d6a;
+    --line: #dedeD9; --accent: #2f6f4f; --accent-ink: #ffffff; --shadow: rgba(0,0,0,.09);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181a; --panel: #1f2124; --ink: #e8e8e6; --muted: #9a9a97;
+      --line: #33363a; --accent: #4d9c74; --accent-ink: #0d1210; --shadow: rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 12px 18px;
+    border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .04em; text-transform: uppercase; }
+  header .name { color: var(--muted); font-size: 13px; overflow: hidden;
+                 text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: var(--panel);
+    color: var(--ink); border-radius: 7px; padding: 7px 13px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  main { display: grid; grid-template-columns: 330px 1fr; min-height: calc(100vh - 55px); }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+
+  aside {
+    border-right: 1px solid var(--line); background: var(--panel); padding: 16px;
+    position: sticky; top: 55px; align-self: start;
+    max-height: calc(100vh - 55px); overflow-y: auto;
+  }
+  @media (max-width: 820px) { aside { position: static; max-height: none; } }
+  aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+             color: var(--muted); margin: 0 0 9px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+  .chip { padding: 6px 11px; font-size: 13px; }
+  .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  details { border-top: 1px solid var(--line); padding: 9px 0; }
+  details > summary { cursor: pointer; font-weight: 600; font-size: 13px; list-style: none; padding: 3px 0; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::before { content: "▸ "; color: var(--muted); }
+  details[open] > summary::before { content: "▾ "; }
+
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 11px 0 4px; }
+  .row label { font-size: 13px; }
+  .row output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+  .row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
+  .row select, .row input[type=number] {
+    grid-column: 1 / -1; font: inherit; padding: 5px 7px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  }
+  .seed { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+  .seed input { grid-column: auto; }
+
+  section.stage { padding: 22px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #drop {
+    border: 2px dashed var(--line); border-radius: 14px; padding: 60px 40px;
+    text-align: center; color: var(--muted); width: min(560px, 100%); margin: auto;
+  }
+  #drop.over { border-color: var(--accent); color: var(--ink); }
+  #drop strong { display: block; color: var(--ink); font-size: 17px; margin-bottom: 6px; }
+  .viewer { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .paper { position: relative; box-shadow: 0 3px 18px var(--shadow); background: var(--panel); border-radius: 2px; }
+  .paper img { display: block; max-width: 100%; max-height: 80vh; border-radius: 2px; }
+  .paper.busy img { opacity: .55; }
+  .spinner {
+    position: absolute; inset: 0; margin: auto; width: 26px; height: 26px;
+    border: 3px solid var(--line); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .8s linear infinite; display: none;
+  }
+  .paper.busy .spinner { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .bar .count { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 82px; text-align: center; }
+  .note { color: var(--muted); font-size: 12px; }
+  .error { color: #c0392b; }
+  @media (prefers-color-scheme: dark) { .error { color: #ef8a7d; } }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>scanify</h1>
+  <span class="name" id="docName">файл не выбран</span>
+  <button id="pick">Открыть PDF</button>
+  <button id="download" class="primary" disabled>Скачать скан</button>
+</header>
+
+<main>
+  <aside>
+    <h2>Пресет</h2>
+    <div class="chips" id="presets"></div>
+    <div id="groups"></div>
+    <p class="note" id="previewNote"></p>
+  </aside>
+
+  <section class="stage">
+    <div id="drop">
+      <strong>Перетащите PDF сюда</strong>
+      или нажмите «Открыть PDF» вверху
+    </div>
+
+    <div class="viewer hidden" id="viewer">
+      <div class="paper" id="paper">
+        <img id="preview" alt="Предпросмотр страницы">
+        <div class="spinner"></div>
+      </div>
+      <div class="bar">
+        <button id="prev">←</button>
+        <span class="count" id="count"></span>
+        <button id="next">→</button>
+      </div>
+      <p class="note" id="status"></p>
+    </div>
+  </section>
+</main>
+
+<input type="file" id="file" accept="application/pdf,.pdf" hidden>
+
+<script>
+const GROUPS = [
+  ["Геометрия", [
+    {k:"rotate",      t:"Перекос, °",         min:0,   max:3,     step:0.05},
+    {k:"shift",       t:"Сдвиг, пикс.",       min:0,   max:20,    step:0.5},
+    {k:"bow",         t:"Прогиб страницы",    min:0,   max:0.02,  step:0.001, dp:3},
+    {k:"wave",        t:"Волна",              min:0,   max:5,     step:0.1},
+  ]],
+  ["Бумага", [
+    {k:"yellow",      t:"Желтизна",           min:0,   max:1.5,   step:0.05, derived:true},
+    {k:"paper_blotch",t:"Пятна",              min:0,   max:0.3,   step:0.005, dp:3},
+    {k:"paper_fiber", t:"Волокно",            min:0,   max:0.08,  step:0.002, dp:3},
+  ]],
+  ["Свет", [
+    {k:"vignette",    t:"Виньетка",           min:0,   max:0.5,   step:0.01},
+    {k:"fold_shadow", t:"Тень от корешка",    min:0,   max:0.7,   step:0.01},
+    {k:"brightness",  t:"Разброс экспозиции", min:0,   max:0.15,  step:0.005, dp:3},
+  ]],
+  ["Оптика и тонер", [
+    {k:"blur",        t:"Расфокус",           min:0,   max:3,     step:0.05},
+    {k:"bleed",       t:"Растекание тонера",  min:0,   max:1,     step:0.02},
+  ]],
+  ["Тон", [
+    {k:"contrast",    t:"Контраст",           min:0.6, max:2,     step:0.02},
+    {k:"gamma",       t:"Гамма",              min:0.6, max:1.6,   step:0.02},
+    {k:"black_point", t:"Подъём чёрного",     min:0,   max:0.25,  step:0.005, dp:3},
+  ]],
+  ["Сенсор", [
+    {k:"noise",       t:"Шум",                min:0,   max:0.08,  step:0.002, dp:3},
+    {k:"dust",        t:"Пыль, шт./Мпикс",    min:0,   max:300,   step:5, scale:1e-6, dp:0},
+    {k:"scratches",   t:"Царапины",           min:0,   max:6,     step:1, dp:0},
+  ]],
+  ["Вывод", [
+    {k:"mode",    t:"Цвет",     select:[["gray","оттенки серого"],["color","цветной"],["bw","1 бит"]]},
+    {k:"dpi",     t:"Разрешение", select:[[100,"100 dpi"],[150,"150 dpi"],[200,"200 dpi"],[300,"300 dpi"],[400,"400 dpi"]]},
+    {k:"quality", t:"Качество JPEG", min:20, max:95, step:1, dp:0},
+    {k:"seed",    t:"Зерно случайности", seed:true},
+  ]],
+];
+
+const $ = (id) => document.getElementById(id);
+let PRESETS = {}, settings = {}, doc = null, page = 0, inflight = null, timer = null;
+
+// The three tint channels are driven by one slider: 0 is white, 1 matches the
+// "worn" preset. Anything else would mean three sliders for one visual idea.
+const tintFor = (y) => [1.0, +(1 - 0.045 * y).toFixed(4), +(1 - 0.145 * y).toFixed(4)];
+const yellowOf = (tint) => +(((1 - (tint ? tint[2] : 1)) / 0.145)).toFixed(2);
+
+function fmt(spec, value) {
+  if (spec.dp === 0) return String(Math.round(value));
+  return value.toFixed(spec.dp ?? 2);
+}
+
+function buildControls() {
+  const host = $("groups");
+  host.innerHTML = "";
+  GROUPS.forEach(([title, specs], i) => {
+    const box = document.createElement("details");
+    if (i < 2) box.open = true;
+    box.innerHTML = `<summary>${title}</summary>`;
+    specs.forEach((spec) => box.appendChild(control(spec)));
+    host.appendChild(box);
+  });
+}
+
+function control(spec) {
+  const row = document.createElement("div");
+  row.className = "row";
+  const id = "c_" + spec.k;
+
+  if (spec.select) {
+    row.innerHTML = `<label for="${id}">${spec.t}</label><output></output>
+      <select id="${id}">${spec.select.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`;
+    const el = row.querySelector("select");
+    el.addEventListener("change", () => { settings[spec.k] = isNaN(+el.value) ? el.value : +el.value; refresh(); });
+  } else if (spec.seed) {
+    row.innerHTML = `<label for="${id}">${spec.t}</label><output></output>
+      <div class="seed"><input type="number" id="${id}" min="0" step="1"><button type="button" title="Другой случайный вид">🎲</button></div>`;
+    const el = row.querySelector("input");
+    el.addEventListener("change", () => { settings.seed = Math.max(0, parseInt(el.value || 0, 10)); refresh(); });
+    row.querySelector("button").addEventListener("click", () => {
+      settings.seed = Math.floor(Math.random() * 100000); syncControls(); refresh();
+    });
+  } else {
+    row.innerHTML = `<label for="${id}">${spec.t}</label><output id="o_${spec.k}"></output>
+      <input type="range" id="${id}" min="${spec.min}" max="${spec.max}" step="${spec.step}">`;
+    const el = row.querySelector("input");
+    el.addEventListener("input", () => {
+      const value = +el.value;
+      row.querySelector("output").textContent = fmt(spec, value);
+      if (spec.derived) settings.paper_tint = tintFor(value);
+      else settings[spec.k] = spec.scale ? value * spec.scale : value;
+      refresh();
+    });
+  }
+  row.dataset.key = spec.k;
+  row._spec = spec;
+  return row;
+}
+
+function syncControls() {
+  document.querySelectorAll(".row[data-key]").forEach((row) => {
+    const spec = row._spec, key = spec.k;
+    let value;
+    if (spec.derived) value = yellowOf(settings.paper_tint);
+    else if (spec.scale) value = (settings[key] ?? 0) / spec.scale;
+    else value = settings[key];
+
+    const range = row.querySelector("input[type=range]");
+    if (range) {
+      range.value = value;
+      row.querySelector("output").textContent = fmt(spec, +range.value);
+    }
+    const select = row.querySelector("select");
+    if (select) select.value = String(value);
+    const number = row.querySelector("input[type=number]");
+    if (number) number.value = value ?? 1;
+  });
+}
+
+function applyPreset(name) {
+  settings = { ...PRESETS[name] };
+  if (settings.seed === null || settings.seed === undefined) settings.seed = 1;
+  document.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.name === name)));
+  syncControls();
+  refresh();
+}
+
+function refresh() {
+  if (!doc) return;
+  clearTimeout(timer);
+  timer = setTimeout(renderPreview, 220);
+}
+
+async function renderPreview() {
+  if (!doc) return;
+  if (inflight) inflight.abort();
+  const controller = new AbortController();
+  inflight = controller;
+  $("paper").classList.add("busy");
+  $("status").textContent = "";
+  try {
+    const response = await fetch("/api/preview", {
+      method: "POST", signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: doc.id, page, settings }),
+    });
+    if (!response.ok) throw new Error((await response.json()).error || "не удалось построить предпросмотр");
+    const blob = await response.blob();
+    const previous = $("preview").src;
+    $("preview").src = URL.createObjectURL(blob);
+    if (previous.startsWith("blob:")) URL.revokeObjectURL(previous);
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    fail(err.message);
+  } finally {
+    if (inflight === controller) { inflight = null; $("paper").classList.remove("busy"); }
+  }
+}
+
+function fail(message) { $("status").textContent = message; $("status").className = "note error"; }
+
+async function upload(file) {
+  if (!file) return;
+  $("status").className = "note";
+  $("status").textContent = "Загружаю…";
+  const body = new FormData();
+  body.append("file", file);
+  try {
+    const response = await fetch("/api/documents", { method: "POST", body });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "не удалось загрузить файл");
+    doc = data; page = 0;
+    $("docName").textContent = `${data.name} · ${data.pages} стр.`;
+    $("drop").classList.add("hidden");
+    $("viewer").classList.remove("hidden");
+    $("download").disabled = false;
+    updateCount();
+    $("status").textContent = "";
+    renderPreview();
+  } catch (err) { fail(err.message); }
+}
+
+function updateCount() {
+  $("count").textContent = doc ? `${page + 1} / ${doc.pages}` : "";
+  $("prev").disabled = !doc || page === 0;
+  $("next").disabled = !doc || page >= doc.pages - 1;
+}
+
+function step(delta) {
+  if (!doc) return;
+  page = Math.max(0, Math.min(doc.pages - 1, page + delta));
+  updateCount();
+  renderPreview();
+}
+
+async function download() {
+  if (!doc) return;
+  const button = $("download");
+  button.disabled = true;
+  const label = button.textContent;
+  button.textContent = "Обрабатываю…";
+  $("status").className = "note";
+  $("status").textContent = `Обрабатываю ${doc.pages} стр. при ${settings.dpi} dpi…`;
+  try {
+    const response = await fetch("/api/convert", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: doc.id, name: doc.name, settings }),
+    });
+    if (!response.ok) throw new Error((await response.json()).error || "не удалось обработать документ");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = doc.name.replace(/\.pdf$/i, "") + "-scan.pdf";
+    link.click();
+    URL.revokeObjectURL(url);
+    $("status").textContent = "Готово.";
+  } catch (err) { fail(err.message); }
+  finally { button.disabled = false; button.textContent = label; }
+}
+
+$("pick").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", (e) => upload(e.target.files[0]));
+$("download").addEventListener("click", download);
+$("prev").addEventListener("click", () => step(-1));
+$("next").addEventListener("click", () => step(1));
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, select")) return;
+  if (e.key === "ArrowLeft") step(-1);
+  if (e.key === "ArrowRight") step(1);
+});
+["dragenter", "dragover"].forEach((type) =>
+  document.addEventListener(type, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach((type) =>
+  document.addEventListener(type, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
+document.addEventListener("drop", (e) => upload(e.dataTransfer.files[0]));
+
+(async function start() {
+  const config = await (await fetch("/api/presets")).json();
+  PRESETS = config.presets;
+  $("previewNote").textContent =
+    `Предпросмотр строится при ${config.preview_dpi} dpi — быстрее, чем итоговый файл. ` +
+    `Скачанный PDF использует выбранное разрешение.`;
+  const host = $("presets");
+  const ORDER = ["clean", "office", "book", "worn", "photocopy", "fax"];
+  const named = Object.keys(PRESETS)
+    .sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99));
+  named.forEach((name) => {
+    const chip = document.createElement("button");
+    chip.className = "chip"; chip.textContent = name; chip.dataset.name = name;
+    chip.setAttribute("aria-pressed", "false");
+    chip.addEventListener("click", () => applyPreset(name));
+    host.appendChild(chip);
+  });
+  buildControls();
+  applyPreset(config.default);
+})();
+</script>
+</body>
+</html>

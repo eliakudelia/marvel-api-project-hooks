@@ -12,7 +12,22 @@ pip install -e .
 
 Needs Python 3.10+, PyMuPDF, Pillow and NumPy.
 
-## Use
+## Browser interface
+
+```bash
+pip install -e ".[ui]"
+scanify-ui
+```
+
+Opens `http://127.0.0.1:8000/` — drop a PDF in, pick a preset, drag the sliders
+and watch page one update, then download the finished file. The server listens
+on the loopback interface only and keeps uploads in a temporary directory that
+is wiped when you stop it. Previews render at 120 dpi so a slider feels
+responsive; the downloaded PDF uses whatever resolution you selected.
+
+`scanify-ui --port 9000` moves it, `--no-browser` stops it opening a window.
+
+## Command line
 
 ```bash
 scanify report.pdf -o scanned.pdf                       # everyday office scanner
