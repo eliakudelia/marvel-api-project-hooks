@@ -29,6 +29,13 @@
   header h1 { font-size: 15px; margin: 0; letter-spacing: .04em; text-transform: uppercase; }
   header .name { color: var(--muted); font-size: 13px; overflow: hidden;
                  text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .modes { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .modes .mode { border: 0; border-radius: 0; padding: 6px 15px; font-size: 13px; }
+  .modes .mode[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  header select {
+    font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  }
   button {
     font: inherit; border: 1px solid var(--line); background: var(--panel);
     color: var(--ink); border-radius: 7px; padding: 7px 13px; cursor: pointer;
@@ -97,9 +104,17 @@
 <body>
 <header>
   <h1>scanify</h1>
+  <div class="modes" id="modes">
+    <button class="mode" data-mode="scan" aria-pressed="true">Скан</button>
+    <button class="mode" data-mode="photo" aria-pressed="false">Фото</button>
+  </div>
   <span class="name" id="docName">файл не выбран</span>
+  <select id="scope" class="hidden" title="Что сохранить">
+    <option value="page">эта страница · JPEG</option>
+    <option value="all">все страницы · PDF</option>
+  </select>
   <button id="pick">Открыть PDF</button>
-  <button id="download" class="primary" disabled>Скачать скан</button>
+  <button id="download" class="primary" disabled>Скачать</button>
 </header>
 
 <main>
@@ -134,7 +149,8 @@
 <input type="file" id="file" accept="application/pdf,.pdf" hidden>
 
 <script>
-const GROUPS = [
+
+const SCAN_GROUPS = [
   ["Геометрия", [
     {k:"rotate",      t:"Перекос, °",         min:0,   max:3,     step:0.05},
     {k:"shift",       t:"Сдвиг, пикс.",       min:0,   max:20,    step:0.5},
@@ -142,7 +158,7 @@ const GROUPS = [
     {k:"wave",        t:"Волна",              min:0,   max:5,     step:0.1},
   ]],
   ["Бумага", [
-    {k:"yellow",      t:"Желтизна",           min:0,   max:1.5,   step:0.05, derived:true},
+    {k:"yellow",      t:"Желтизна",           min:0,   max:1.5,   step:0.05, tint:"paper_tint"},
     {k:"paper_blotch",t:"Пятна",              min:0,   max:0.3,   step:0.005, dp:3},
     {k:"paper_fiber", t:"Волокно",            min:0,   max:0.08,  step:0.002, dp:3},
   ]],
@@ -173,13 +189,74 @@ const GROUPS = [
   ]],
 ];
 
-const $ = (id) => document.getElementById(id);
-let PRESETS = {}, settings = {}, doc = null, page = 0, inflight = null, timer = null;
+const PHOTO_GROUPS = [
+  ["Кадр", [
+    {k:"margin",      t:"Поля вокруг листа",  min:0,   max:0.35,  step:0.01},
+    {k:"tilt",        t:"Наклон, °",          min:0,   max:15,    step:0.5},
+    {k:"perspective", t:"Перспектива",        min:0,   max:0.25,  step:0.005, dp:3},
+    {k:"offset",      t:"Смещение от центра", min:0,   max:0.08,  step:0.005, dp:3},
+  ]],
+  ["Поверхность", [
+    {k:"shade",         t:"Яркость фона",     min:0.55, max:1.15, step:0.01, tint:"surface"},
+    {k:"surface_blotch",t:"Пятна",            min:0,   max:0.25,  step:0.005, dp:3},
+    {k:"surface_streak",t:"Фактура",          min:0,   max:0.2,   step:0.005, dp:3},
+    {k:"surface_grain", t:"Зерно",            min:0,   max:0.05,  step:0.002, dp:3},
+  ]],
+  ["Свет", [
+    {k:"light_angle",   t:"Откуда свет, °",   min:0,   max:355,   step:5, dp:0},
+    {k:"light_falloff", t:"Перепад света",    min:0,   max:0.6,   step:0.01},
+    {k:"curl",          t:"Прогиб листа",     min:0,   max:0.25,  step:0.005, dp:3},
+    {k:"edge_light",    t:"Толщина листа",    min:0,   max:0.2,   step:0.005, dp:3},
+  ]],
+  ["Тень", [
+    {k:"shadow",        t:"Сила тени",        min:0,   max:0.9,   step:0.02},
+    {k:"shadow_offset", t:"Смещение тени",    min:0,   max:0.06,  step:0.002, dp:3},
+    {k:"shadow_blur",   t:"Мягкость тени",    min:0,   max:0.06,  step:0.002, dp:3},
+    {k:"contact",       t:"Тень у края",      min:0,   max:0.6,   step:0.02},
+  ]],
+  ["Камера", [
+    {k:"defocus",   t:"Расфокус по краям",    min:0,   max:0.012, step:0.0002, dp:4},
+    {k:"vignette",  t:"Виньетка",             min:0,   max:0.5,   step:0.01},
+    {k:"chromatic", t:"Хроматизм",            min:0,   max:0.004, step:0.0001, dp:4},
+    {k:"noise",     t:"Шум",                  min:0,   max:0.05,  step:0.002, dp:3},
+    {k:"warmth",    t:"Теплота",              min:-0.1, max:0.25, step:0.01},
+    {k:"exposure",  t:"Экспозиция",           min:-0.2, max:0.2,  step:0.01},
+  ]],
+  ["Вывод", [
+    {k:"width",   t:"Ширина, пикс.", select:[[900,"900"],[1200,"1200"],[1600,"1600"],[2000,"2000"],[2600,"2600"]]},
+    {k:"quality", t:"Качество JPEG", min:40, max:95, step:1, dp:0},
+    {k:"seed",    t:"Зерно случайности", seed:true},
+  ]],
+];
 
-// The three tint channels are driven by one slider: 0 is white, 1 matches the
-// "worn" preset. Anything else would mean three sliders for one visual idea.
-const tintFor = (y) => [1.0, +(1 - 0.045 * y).toFixed(4), +(1 - 0.145 * y).toFixed(4)];
-const yellowOf = (tint) => +(((1 - (tint ? tint[2] : 1)) / 0.145)).toFixed(2);
+// Each mode is a self-contained description of its presets, its controls and
+// the two endpoints it talks to, so adding a third mode stays a data change.
+const MODES = {
+  scan: {
+    groups: SCAN_GROUPS, presets: {}, fallback: "office",
+    preview: "/api/preview", convert: "/api/convert",
+    // Three tint channels behind one slider: 0 is white, 1 matches "worn".
+    tint: { paper_tint: {
+      to: (y) => [1, +(1 - 0.045 * y).toFixed(4), +(1 - 0.145 * y).toFixed(4)],
+      from: (c) => +((1 - (c ? c[2] : 1)) / 0.145).toFixed(2) } },
+  },
+  photo: {
+    groups: PHOTO_GROUPS, presets: {}, fallback: "desk",
+    preview: "/api/photo/preview", convert: "/api/photo/convert",
+    // The surface keeps the preset's hue; the slider only scales it.
+    tint: { surface: {
+      to: function (k) { return this.base.map((c) => +Math.min(1, c * k).toFixed(4)); },
+      from: function (c) { return +((c ? c[0] : 1) / this.base[0]).toFixed(3); },
+      base: [1, 1, 1] } },
+  },
+};
+
+const $ = (id) => document.getElementById(id);
+let mode = "scan", settings = {}, doc = null, page = 0, inflight = null, timer = null;
+const chosen = { scan: null, photo: null };
+const saved = { scan: null, photo: null };
+
+const current = () => MODES[mode];
 
 function fmt(spec, value) {
   if (spec.dp === 0) return String(Math.round(value));
@@ -189,7 +266,7 @@ function fmt(spec, value) {
 function buildControls() {
   const host = $("groups");
   host.innerHTML = "";
-  GROUPS.forEach(([title, specs], i) => {
+  current().groups.forEach(([title, specs], i) => {
     const box = document.createElement("details");
     if (i < 2) box.open = true;
     box.innerHTML = `<summary>${title}</summary>`;
@@ -207,7 +284,10 @@ function control(spec) {
     row.innerHTML = `<label for="${id}">${spec.t}</label><output></output>
       <select id="${id}">${spec.select.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`;
     const el = row.querySelector("select");
-    el.addEventListener("change", () => { settings[spec.k] = isNaN(+el.value) ? el.value : +el.value; refresh(); });
+    el.addEventListener("change", () => {
+      settings[spec.k] = isNaN(+el.value) ? el.value : +el.value;
+      refresh();
+    });
   } else if (spec.seed) {
     row.innerHTML = `<label for="${id}">${spec.t}</label><output></output>
       <div class="seed"><input type="number" id="${id}" min="0" step="1"><button type="button" title="Другой случайный вид">🎲</button></div>`;
@@ -217,13 +297,13 @@ function control(spec) {
       settings.seed = Math.floor(Math.random() * 100000); syncControls(); refresh();
     });
   } else {
-    row.innerHTML = `<label for="${id}">${spec.t}</label><output id="o_${spec.k}"></output>
+    row.innerHTML = `<label for="${id}">${spec.t}</label><output></output>
       <input type="range" id="${id}" min="${spec.min}" max="${spec.max}" step="${spec.step}">`;
     const el = row.querySelector("input");
     el.addEventListener("input", () => {
       const value = +el.value;
       row.querySelector("output").textContent = fmt(spec, value);
-      if (spec.derived) settings.paper_tint = tintFor(value);
+      if (spec.tint) settings[spec.tint] = current().tint[spec.tint].to(value);
       else settings[spec.k] = spec.scale ? value * spec.scale : value;
       refresh();
     });
@@ -237,7 +317,7 @@ function syncControls() {
   document.querySelectorAll(".row[data-key]").forEach((row) => {
     const spec = row._spec, key = spec.k;
     let value;
-    if (spec.derived) value = yellowOf(settings.paper_tint);
+    if (spec.tint) value = current().tint[spec.tint].from(settings[spec.tint]);
     else if (spec.scale) value = (settings[key] ?? 0) / spec.scale;
     else value = settings[key];
 
@@ -254,11 +334,56 @@ function syncControls() {
 }
 
 function applyPreset(name) {
-  settings = { ...PRESETS[name] };
+  const spec = current();
+  settings = { ...spec.presets[name] };
   if (settings.seed === null || settings.seed === undefined) settings.seed = 1;
-  document.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.name === name)));
+  // Remember the preset's own colours; the tint sliders work relative to them.
+  Object.values(spec.tint || {}).forEach((t) => {
+    if (t.base && settings.surface) t.base = settings.surface.slice();
+  });
+  chosen[mode] = name;
+  saved[mode] = settings;
+  document.querySelectorAll(".chip").forEach((c) =>
+    c.setAttribute("aria-pressed", String(c.dataset.name === name)));
   syncControls();
   refresh();
+}
+
+function fillChips() {
+  const host = $("presets");
+  host.innerHTML = "";
+  Object.keys(current().presets).forEach((name) => {
+    const chip = document.createElement("button");
+    chip.className = "chip"; chip.textContent = name; chip.dataset.name = name;
+    chip.setAttribute("aria-pressed", "false");
+    chip.addEventListener("click", () => applyPreset(name));
+    host.appendChild(chip);
+  });
+}
+
+function switchMode(next) {
+  if (next === mode) return;
+  saved[mode] = settings;
+  mode = next;
+  document.querySelectorAll(".mode").forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  fillChips();
+  buildControls();
+  if (saved[mode]) {
+    settings = saved[mode];
+    document.querySelectorAll(".chip").forEach((c) =>
+      c.setAttribute("aria-pressed", String(c.dataset.name === chosen[mode])));
+    syncControls();
+    refresh();
+  } else {
+    applyPreset(current().fallback);
+  }
+  updateScope();
+}
+
+function updateScope() {
+  const show = mode === "photo" && doc && doc.pages > 1;
+  $("scope").classList.toggle("hidden", !show);
 }
 
 function refresh() {
@@ -275,7 +400,7 @@ async function renderPreview() {
   $("paper").classList.add("busy");
   $("status").textContent = "";
   try {
-    const response = await fetch("/api/preview", {
+    const response = await fetch(current().preview, {
       method: "POST", signal: controller.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: doc.id, page, settings }),
@@ -311,6 +436,7 @@ async function upload(file) {
     $("viewer").classList.remove("hidden");
     $("download").disabled = false;
     updateCount();
+    updateScope();
     $("status").textContent = "";
     renderPreview();
   } catch (err) { fail(err.message); }
@@ -336,18 +462,22 @@ async function download() {
   const label = button.textContent;
   button.textContent = "Обрабатываю…";
   $("status").className = "note";
-  $("status").textContent = `Обрабатываю ${doc.pages} стр. при ${settings.dpi} dpi…`;
+  const scope = mode === "photo" ? $("scope").value : "all";
+  const total = (mode === "scan" || scope === "all") ? doc.pages : 1;
+  $("status").textContent = `Обрабатываю ${total} стр.…`;
   try {
-    const response = await fetch("/api/convert", {
+    const response = await fetch(current().convert, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: doc.id, name: doc.name, settings }),
+      body: JSON.stringify({ id: doc.id, name: doc.name, settings, page, scope }),
     });
     if (!response.ok) throw new Error((await response.json()).error || "не удалось обработать документ");
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+    const stem = doc.name.replace(/\.pdf$/i, "");
+    const fromServer = (response.headers.get("Content-Disposition") || "").match(/filename="?([^";]+)"?/);
     link.href = url;
-    link.download = doc.name.replace(/\.pdf$/i, "") + "-scan.pdf";
+    link.download = fromServer ? fromServer[1] : `${stem}-out`;
     link.click();
     URL.revokeObjectURL(url);
     $("status").textContent = "Готово.";
@@ -360,6 +490,8 @@ $("file").addEventListener("change", (e) => upload(e.target.files[0]));
 $("download").addEventListener("click", download);
 $("prev").addEventListener("click", () => step(-1));
 $("next").addEventListener("click", () => step(1));
+document.querySelectorAll(".mode").forEach((b) =>
+  b.addEventListener("click", () => switchMode(b.dataset.mode)));
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, select")) return;
   if (e.key === "ArrowLeft") step(-1);
@@ -373,23 +505,22 @@ document.addEventListener("drop", (e) => upload(e.dataTransfer.files[0]));
 
 (async function start() {
   const config = await (await fetch("/api/presets")).json();
-  PRESETS = config.presets;
+  const order = {
+    scan: ["clean", "office", "book", "worn", "photocopy", "fax"],
+    photo: ["table", "desk", "wood", "handheld", "overhead", "evening"],
+  };
+  const sortBy = (list) => (a, b) => (list.indexOf(a) + 1 || 99) - (list.indexOf(b) + 1 || 99);
+  for (const [key, raw] of [["scan", config.presets], ["photo", config.photo_presets]]) {
+    Object.keys(raw).sort(sortBy(order[key])).forEach((name) => { MODES[key].presets[name] = raw[name]; });
+  }
+  MODES.scan.fallback = config.default;
+  MODES.photo.fallback = config.photo_default;
   $("previewNote").textContent =
-    `Предпросмотр строится при ${config.preview_dpi} dpi — быстрее, чем итоговый файл. ` +
-    `Скачанный PDF использует выбранное разрешение.`;
-  const host = $("presets");
-  const ORDER = ["clean", "office", "book", "worn", "photocopy", "fax"];
-  const named = Object.keys(PRESETS)
-    .sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99));
-  named.forEach((name) => {
-    const chip = document.createElement("button");
-    chip.className = "chip"; chip.textContent = name; chip.dataset.name = name;
-    chip.setAttribute("aria-pressed", "false");
-    chip.addEventListener("click", () => applyPreset(name));
-    host.appendChild(chip);
-  });
+    `Предпросмотр строится уменьшенным ради скорости — скан при ${config.preview_dpi} dpi, ` +
+    `фото шириной ${config.photo_preview_width} пикс. Скачанный файл использует выбранный размер.`;
+  fillChips();
   buildControls();
-  applyPreset(config.default);
+  applyPreset(MODES.scan.fallback);
 })();
 </script>
 </body>

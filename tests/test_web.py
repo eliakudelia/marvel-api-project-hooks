@@ -178,3 +178,94 @@ def test_close_removes_only_its_own_directory(tmp_path, sample_pdf):
     keeper.add(sample_pdf.read_bytes())
     keeper.close()
     assert root.exists()  # a caller-supplied directory is left alone
+
+
+# --- photo mode -----------------------------------------------------------
+
+def photo_settings(**overrides):
+    return {"width": 320, "seed": 1, **overrides}
+
+
+def test_presets_endpoint_also_lists_the_photo_presets(client):
+    body = client.get("/api/presets").get_json()
+    assert set(body["photo_presets"]) == {
+        "desk", "table", "wood", "handheld", "overhead", "evening"}
+    assert body["photo_default"] == "desk"
+    assert body["photo_preview_width"] > 0
+
+
+def test_photo_preview_returns_an_image(client, uploaded):
+    response = client.post("/api/photo/preview",
+                           json={"id": uploaded["id"], "page": 0,
+                                 "settings": photo_settings()})
+    assert response.status_code == 200
+    assert response.mimetype == "image/jpeg"
+
+
+def test_photo_preview_clamps_the_page(client, uploaded):
+    response = client.post("/api/photo/preview",
+                           json={"id": uploaded["id"], "page": 42,
+                                 "settings": photo_settings()})
+    assert response.status_code == 200
+
+
+def test_photo_preview_accepts_a_surface_list(client, uploaded):
+    response = client.post("/api/photo/preview", json={
+        "id": uploaded["id"], "page": 0,
+        "settings": photo_settings(surface=[0.8, 0.75, 0.7])})
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("bad", [{"quality": 300}, {"width": 20}, {"margin": 0.9}])
+def test_photo_preview_rejects_impossible_settings(client, uploaded, bad):
+    response = client.post("/api/photo/preview",
+                           json={"id": uploaded["id"], "page": 0,
+                                 "settings": photo_settings(**bad)})
+    assert response.status_code == 400
+
+
+def test_photo_preview_of_an_unknown_document_is_404(client):
+    response = client.post("/api/photo/preview",
+                           json={"id": "b" * 32, "page": 0, "settings": photo_settings()})
+    assert response.status_code == 404
+
+
+def test_photo_convert_of_one_page_gives_a_jpeg(client, uploaded):
+    response = client.post("/api/photo/convert",
+                           json={"id": uploaded["id"], "name": "report.pdf", "page": 0,
+                                 "scope": "page", "settings": photo_settings()})
+    assert response.status_code == 200
+    assert response.mimetype == "image/jpeg"
+    assert "report-photo.jpg" in response.headers["Content-Disposition"]
+
+
+def test_photo_convert_of_every_page_gives_a_pdf(client, uploaded):
+    response = client.post("/api/photo/convert",
+                           json={"id": uploaded["id"], "name": "report.pdf",
+                                 "scope": "all", "settings": photo_settings()})
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    assert response.data.startswith(b"%PDF")
+    assert "report-photo.pdf" in response.headers["Content-Disposition"]
+
+
+def test_photo_convert_defaults_to_the_single_page(client, uploaded):
+    response = client.post("/api/photo/convert",
+                           json={"id": uploaded["id"], "settings": photo_settings()})
+    assert response.mimetype == "image/jpeg"
+
+
+def test_photo_convert_of_an_unknown_document_is_404(client):
+    response = client.post("/api/photo/convert",
+                           json={"id": "c" * 32, "settings": photo_settings()})
+    assert response.status_code == 404
+
+
+def test_scan_and_photo_settings_do_not_leak_into_each_other(client, uploaded):
+    """A scan-only key must not be accepted as a photo setting, and vice versa."""
+    ok = client.post("/api/photo/preview",
+                     json={"id": uploaded["id"], "settings": photo_settings(dpi=999)})
+    assert ok.status_code == 200  # unknown keys are ignored, not fatal
+    ok = client.post("/api/preview",
+                     json={"id": uploaded["id"], "settings": settings(tilt=99)})
+    assert ok.status_code == 200

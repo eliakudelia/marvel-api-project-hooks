@@ -41,16 +41,18 @@ def parse_pages(spec: str) -> list[int]:
     return [i - 1 for i in sorted(dict.fromkeys(indices))]
 
 
-def coerce(name: str, raw: str) -> Any:
-    """Cast a ``--set name=value`` pair to the type declared on Settings."""
-    declared = {f.name: f.type for f in fields(Settings)}
+def coerce(name: str, raw: str, model: type = Settings) -> Any:
+    """Cast a ``--set name=value`` pair to the type declared on ``model``."""
+    declared = {f.name: f for f in fields(model)}
     if name not in declared:
         raise ValueError(f"unknown setting {name!r}")
-    kind = declared[name]
-    if name == "paper_tint":
+    field = declared[name]
+    kind = field.type
+    if isinstance(field.default, tuple):
         parts = [float(v) for v in raw.split(",")]
-        if len(parts) != 3:
-            raise ValueError("paper_tint needs three comma separated values")
+        if len(parts) != len(field.default):
+            raise ValueError(
+                f"{name} needs {len(field.default)} comma separated values")
         return tuple(parts)
     if kind is bool or kind == "bool":
         low = raw.lower()

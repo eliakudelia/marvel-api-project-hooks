@@ -41,7 +41,7 @@ def test_coerce_casts_by_declared_type():
 def test_coerce_rejects_unknown_and_malformed():
     with pytest.raises(ValueError, match="unknown setting"):
         coerce("sharpness", "3")
-    with pytest.raises(ValueError, match="three comma separated"):
+    with pytest.raises(ValueError, match="comma separated"):
         coerce("paper_tint", "1.0,0.9")
     with pytest.raises(ValueError, match="expected a boolean"):
         coerce("dither", "maybe")
